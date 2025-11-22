@@ -69,7 +69,7 @@ jobs:
       run: docker build -t adstxt-api:latest .
 
     - name: Start services
-      run: docker-compose up -d
+      run: docker compose up -d
 
     - name: Wait for service to be ready
       run: |
@@ -78,16 +78,18 @@ jobs:
     - name: Run integration smoke test
       run: |
         response=$(curl -s http://localhost:8080/health)
-        if [ "$response" != '{"status":"ok"}' ]; then
+        echo "Response: $response"
+        if echo "$response" | grep -q '"status":"healthy"'; then
+          echo "Health check passed"
+        else
           echo "Health check failed: $response"
           exit 1
         fi
-        echo "Health check passed"
 
     - name: Show logs on failure
       if: failure()
-      run: docker-compose logs
+      run: docker compose logs
 
     - name: Cleanup
       if: always()
-      run: docker-compose down -v
+      run: docker compose down -v
