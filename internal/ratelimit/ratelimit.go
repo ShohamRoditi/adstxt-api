@@ -3,6 +3,7 @@
 package ratelimit
 
 import (
+	"log"
 	"sync"
 	"time"
 )
@@ -42,23 +43,22 @@ func NewRateLimiter(limitPerSecond int) *RateLimiter {
 }
 
 // Allow checks if a request from the given client should be allowed based on the rate limit.
-// It returns true if the client has available tokens, false otherwise.
-// The method is thread-safe and uses a token bucket algorithm where tokens are refilled
-// every second based on the configured limit.
+// Returns true if the client has available tokens, false otherwise.
+// Uses token bucket algorithm - tokens refill every second up to the limit.
 func (rl *RateLimiter) Allow(clientID string) bool {
-	rl.mu.RLock()
+	// Fixed race condition: was using RLock first, but multiple goroutines could create
+	// duplicate buckets. Now use write lock from start.
+	// TODO: Could optimize with sync.Map but current approach is simpler
+	rl.mu.Lock()
 	bucket, exists := rl.clients[clientID]
-	rl.mu.RUnlock()
-
 	if !exists {
 		bucket = &clientBucket{
 			tokens:    rl.limit,
 			lastReset: time.Now(),
 		}
-		rl.mu.Lock()
 		rl.clients[clientID] = bucket
-		rl.mu.Unlock()
 	}
+	rl.mu.Unlock()
 
 	bucket.mu.Lock()
 	defer bucket.mu.Unlock()
@@ -78,28 +78,44 @@ func (rl *RateLimiter) Allow(clientID string) bool {
 }
 
 func (rl *RateLimiter) cleanup() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC in RateLimiter cleanup goroutine: %v", r)
+		}
+	}()
+
 	for range rl.cleanupT.C {
-		now := time.Now()
-		toDelete := []string{}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("PANIC during RateLimiter cleanup iteration: %v", r)
+				}
+			}()
 
-		rl.mu.RLock() // Use read lock first
-		for clientID, bucket := range rl.clients {
-			bucket.mu.Lock()
-			if now.Sub(bucket.lastReset) > 5*time.Minute {
-				toDelete = append(toDelete, clientID)
-			}
-			bucket.mu.Unlock()
-		}
-		rl.mu.RUnlock()
+			now := time.Now()
+			toDelete := []string{}
 
-		// Now delete with write lock
-		if len(toDelete) > 0 {
-			rl.mu.Lock()
-			for _, clientID := range toDelete {
-				delete(rl.clients, clientID)
+			rl.mu.RLock() // Use read lock first
+			for clientID, bucket := range rl.clients {
+				bucket.mu.Lock()
+				if now.Sub(bucket.lastReset) > 5*time.Minute {
+					toDelete = append(toDelete, clientID)
+				}
+				bucket.mu.Unlock()
 			}
-			rl.mu.Unlock()
-		}
+			rl.mu.RUnlock()
+
+			// Now delete with write lock
+			if len(toDelete) > 0 {
+				rl.mu.Lock()
+				for _, clientID := range toDelete {
+					delete(rl.clients, clientID)
+				}
+				rl.mu.Unlock()
+
+				log.Printf("RateLimiter cleanup: removed %d inactive clients", len(toDelete))
+			}
+		}()
 	}
 }
 

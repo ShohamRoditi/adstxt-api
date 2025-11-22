@@ -17,7 +17,7 @@ func TestFetchAdsTxt_Success(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(content))
+		_, _ = w.Write([]byte(content))
 	}))
 	defer server.Close()
 
@@ -54,7 +54,7 @@ func TestFetchAdsTxt_NotFound(t *testing.T) {
 func TestFetchAdsTxt_Timeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(2 * time.Second)
-		w.Write([]byte("too slow"))
+		_, _ = w.Write([]byte("too slow"))
 	}))
 	defer server.Close()
 
@@ -82,7 +82,7 @@ func TestFetchAdsTxt_Redirect(t *testing.T) {
 		}
 		if r.URL.Path == "/ads.txt" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(content))
+			_, _ = w.Write([]byte(content))
 			return
 		}
 		http.NotFound(w, r)
@@ -121,7 +121,7 @@ func TestFetchAdsTxt_TooManyRedirects(t *testing.T) {
 func TestFetchAdsTxt_EmptyContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(""))
+		_, _ = w.Write([]byte(""))
 	}))
 	defer server.Close()
 

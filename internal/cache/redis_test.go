@@ -277,8 +277,8 @@ func TestRedisCache_ConcurrentAccess(t *testing.T) {
 		go func(n int) {
 			key := "concurrent-key"
 			value := []byte("value")
-			cache.Set(key, value, 1*time.Minute)
-			cache.Get(key)
+			_ = cache.Set(key, value, 1*time.Minute)
+			_, _ = cache.Get(key)
 			done <- true
 		}(i)
 	}
@@ -462,8 +462,8 @@ func TestRedisCache_MultipleDBs(t *testing.T) {
 	value0 := []byte("value-db0")
 	value1 := []byte("value-db1")
 
-	cache0.Set(key, value0, 1*time.Minute)
-	cache1.Set(key, value1, 1*time.Minute)
+	_ = cache0.Set(key, value0, 1*time.Minute)
+	_ = cache1.Set(key, value1, 1*time.Minute)
 
 	// Verify they are isolated
 	result0, _ := cache0.Get(key)

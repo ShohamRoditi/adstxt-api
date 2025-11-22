@@ -12,14 +12,14 @@ Production-ready RESTful API service for analyzing ads.txt files across domains.
 - Docker support with Docker Compose
 - CI/CD with GitHub Actions
 - Graceful shutdown
-- CORS support§
+- CORS support
 
 ## Quick Start
 
 ### Using Docker Compose (Recommended)
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Local Development
@@ -94,6 +94,21 @@ Response:
 GET /health
 ```
 
+### Metrics
+```bash
+GET /metrics
+```
+
+Response:
+```json
+{
+  "requests_total": 1523,
+  "cache_hits": 892,
+  "cache_misses": 631,
+  "errors_total": 12
+}
+```
+
 ## Configuration
 
 Environment variables:
@@ -116,12 +131,12 @@ Environment variables:
 # Run all tests
 go test ./... -v
 
-# Run with coverage
-go test ./... -coverprofile=coverage.out
-go tool cover -html=coverage.out
+# Run with race detector and coverage
+go test -race -coverprofile=coverage.out ./...
 
-# Run specific package tests
-go test ./internal/ratelimit -v
+
+# Or use Makefile
+make test
 ```
 
 ## Architecture
@@ -137,6 +152,21 @@ Abstract cache interface with three implementations:
 
 ### Concurrent Processing
 Batch requests process domains concurrently using goroutines with proper synchronization.
+
+## Make Commands
+
+```bash
+make build          # Build the server binary
+make test           # Run tests with coverage
+make run            # Run the server locally
+make docker-build   # Build Docker image
+make docker-up      # Start services with Docker Compose
+make docker-down    # Stop services
+make docker-logs    # View service logs
+make clean          # Clean build artifacts and stop containers
+make lint           # Run linter
+make deps           # Download and tidy dependencies
+```
 
 ## Production Considerations
 

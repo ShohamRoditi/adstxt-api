@@ -127,7 +127,7 @@ func TestFileCache_MultipleConcurrent(t *testing.T) {
 		go func(n int) {
 			key := filepath.Join("concurrent", string(rune(n)))
 			value := []byte("value")
-			fc.Set(key, value, 0)
+			_ = fc.Set(key, value, 0)
 			done <- true
 		}(i)
 	}
@@ -141,7 +141,7 @@ func TestFileCache_MultipleConcurrent(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func(n int) {
 			key := filepath.Join("concurrent", string(rune(n)))
-			fc.Get(key)
+			_, _ = fc.Get(key)
 			done <- true
 		}(i)
 	}

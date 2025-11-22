@@ -1,6 +1,8 @@
 package cache
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -39,14 +41,23 @@ func NewFileCache(basePath string, defaultTTL time.Duration) (*FileCache, error)
 	}, nil
 }
 
+// sanitizeKey creates a safe filename from a cache key by hashing it.
+// Prevents path traversal attacks (e.g., "../../../etc/passwd")
+// Using SHA256 instead of MD5 - slightly slower but prevents collision attacks
+func (fc *FileCache) sanitizeKey(key string) string {
+	hash := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(hash[:])
+}
+
 // Get retrieves a value from the file cache by reading the corresponding JSON file.
 // Returns ErrCacheNotFound if the file doesn't exist or the entry has expired.
-// The key is used as the filename with a .json extension.
+// The key is sanitized (hashed) to prevent path traversal attacks.
 func (fc *FileCache) Get(key string) ([]byte, error) {
 	fc.mu.RLock()
 	defer fc.mu.RUnlock()
 
-	filePath := filepath.Join(fc.basePath, key+".json")
+	safeKey := fc.sanitizeKey(key)
+	filePath := filepath.Join(fc.basePath, safeKey+".json")
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, ErrCacheNotFound
@@ -66,7 +77,7 @@ func (fc *FileCache) Get(key string) ([]byte, error) {
 
 // Set stores a value in the file cache by writing it to a JSON file.
 // If ttl is 0, the default TTL is used. The file is created with 0644 permissions.
-// The key is used as the filename with a .json extension.
+// The key is sanitized (hashed) to prevent path traversal attacks.
 func (fc *FileCache) Set(key string, value []byte, ttl time.Duration) error {
 	if ttl == 0 {
 		ttl = fc.defaultTTL
@@ -85,17 +96,20 @@ func (fc *FileCache) Set(key string, value []byte, ttl time.Duration) error {
 		return err
 	}
 
-	filePath := filepath.Join(fc.basePath, key+".json")
+	safeKey := fc.sanitizeKey(key)
+	filePath := filepath.Join(fc.basePath, safeKey+".json")
 	return os.WriteFile(filePath, data, 0644)
 }
 
 // Delete removes a cache entry by deleting its corresponding file.
 // Returns an error if the file cannot be deleted (except when it doesn't exist).
+// The key is sanitized (hashed) to prevent path traversal attacks.
 func (fc *FileCache) Delete(key string) error {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
 
-	filePath := filepath.Join(fc.basePath, key+".json")
+	safeKey := fc.sanitizeKey(key)
+	filePath := filepath.Join(fc.basePath, safeKey+".json")
 	return os.Remove(filePath)
 }
 

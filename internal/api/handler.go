@@ -62,6 +62,8 @@ type Metrics struct {
 	cacheMisses   int64
 	errorTotal    int64
 	mu            sync.RWMutex
+	// TODO: Add histogram for response times
+	// TODO: Track errors by type (network, timeout, invalid domain)
 }
 
 func NewHandler(cache cache.Cache, cfg *config.Config, logger *slog.Logger) *Handler {
@@ -79,17 +81,18 @@ func validateDomain(domain string) error {
 		return errors.New("domain cannot be empty")
 	}
 
-	// Check length
+	// RFC 1035: domain max length is 253 characters
 	if len(domain) > 253 {
 		return errors.New("domain too long")
 	}
 
-	// Check for invalid characters
+	// Reject URLs, IPs, and special chars to prevent SSRF attacks
+	// This blocks things like "localhost:6379", "192.168.1.1", "http://evil.com"
 	if strings.ContainsAny(domain, "/:@?#[]!$&'()*+,;= ") {
 		return errors.New("invalid domain format")
 	}
 
-	// Check basic format
+	// Basic sanity check - must have at least one dot
 	if !strings.Contains(domain, ".") {
 		return errors.New("invalid domain format")
 	}
@@ -153,6 +156,8 @@ func (h *Handler) AnalyzeBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Limit batch size to prevent resource exhaustion
+	// 50 is somewhat arbitrary - could make configurable via env var
 	if len(req.Domains) > 50 {
 		h.sendError(w, http.StatusBadRequest, "maximum 50 domains per batch request")
 		return
@@ -163,6 +168,8 @@ func (h *Handler) AnalyzeBatch(w http.ResponseWriter, r *http.Request) {
 		Errors:  make(map[string]string),
 	}
 
+	// Process domains concurrently for better performance
+	// Each domain analyzed in separate goroutine
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
@@ -178,6 +185,14 @@ func (h *Handler) AnalyzeBatch(w http.ResponseWriter, r *http.Request) {
 				mu.Unlock()
 				return
 			default:
+			}
+
+			// Validate domain to prevent SSRF attacks
+			if err := validateDomain(d); err != nil {
+				mu.Lock()
+				response.Errors[d] = "invalid domain: " + err.Error()
+				mu.Unlock()
+				return
 			}
 
 			result, err := h.analyzeDomain(d)
@@ -208,7 +223,9 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		overallStatus = "degraded"
 	} else {
 		checks["cache"] = "healthy"
-		h.cache.Delete(testKey)
+		if err := h.cache.Delete(testKey); err != nil {
+			h.logger.Warn("failed to delete health check key", slog.String("error", err.Error()))
+		}
 	}
 
 	response := HealthResponse{
@@ -245,12 +262,16 @@ func (h *Handler) analyzeDomain(domain string) (*SingleAnalysisResponse, error) 
 	cachedData, err := h.cache.Get(cacheKey)
 	if err == nil {
 		var result SingleAnalysisResponse
-		if json.Unmarshal(cachedData, &result) == nil {
+		if unmarshalErr := json.Unmarshal(cachedData, &result); unmarshalErr == nil {
 			result.Cached = true
 			h.metrics.mu.Lock()
 			h.metrics.cacheHits++
 			h.metrics.mu.Unlock()
 			return &result, nil
+		} else {
+			h.logger.Warn("failed to unmarshal cached data",
+				slog.String("domain", domain),
+				slog.String("error", unmarshalErr.Error()))
 		}
 	}
 
@@ -261,7 +282,8 @@ func (h *Handler) analyzeDomain(domain string) (*SingleAnalysisResponse, error) 
 
 	content, err := h.fetcher.FetchAdsTxt(domain)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch ads.txt: %v", err)
+		// Don't cache errors - domain might be temporarily unavailable
+		return nil, fmt.Errorf("failed to fetch ads.txt: %w", err)
 	}
 
 	advertisersMap := adstxt.ParseAdsTxt(content)
@@ -284,16 +306,26 @@ func (h *Handler) analyzeDomain(domain string) (*SingleAnalysisResponse, error) 
 
 	// Store in cache for future requests (works for all cache types)
 	if data, err := json.Marshal(result); err == nil {
-		h.cache.Set(cacheKey, data, h.cfg.CacheTTL)
+		if err := h.cache.Set(cacheKey, data, h.cfg.CacheTTL); err != nil {
+			h.logger.Warn("failed to cache result", slog.String("domain", domain), slog.String("error", err.Error()))
+		}
 	}
 
 	return result, nil
 }
 
 func (h *Handler) sendJSON(w http.ResponseWriter, status int, data interface{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			h.logger.Error("panic in JSON encoding", slog.Any("panic", r))
+		}
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		h.logger.Error("failed to encode JSON response", slog.String("error", err.Error()))
+	}
 }
 
 func (h *Handler) sendError(w http.ResponseWriter, status int, message string) {
