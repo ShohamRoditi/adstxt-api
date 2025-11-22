@@ -8,11 +8,15 @@ import (
 	"time"
 )
 
+// Fetcher handles HTTP requests to retrieve ads.txt files from domains.
+// It tries multiple URL patterns (https, http, www prefix) to maximize success.
 type Fetcher struct {
 	client  *http.Client
 	timeout time.Duration
 }
 
+// NewFetcher creates a new Fetcher with the specified timeout.
+// The Fetcher limits redirects to 10 to prevent infinite redirect loops.
 func NewFetcher(timeout time.Duration) *Fetcher {
 	return &Fetcher{
 		client: &http.Client{
@@ -28,6 +32,13 @@ func NewFetcher(timeout time.Duration) *Fetcher {
 	}
 }
 
+// FetchAdsTxt retrieves the ads.txt file content for the given domain.
+// It attempts to fetch from multiple URL patterns in order:
+//  1. https://domain/ads.txt
+//  2. http://domain/ads.txt
+//  3. https://www.domain/ads.txt
+//
+// Returns the content of the first successful response, or an error if all attempts fail.
 func (f *Fetcher) FetchAdsTxt(domain string) (string, error) {
 	urls := []string{
 		fmt.Sprintf("https://%s/ads.txt", domain),

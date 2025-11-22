@@ -1,0 +1,44 @@
+# Git
+.git
+.github
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Documentation
+*.md
+README.md
+LICENSE
+
+# Tests
+*_test.go
+coverage.out
+*.coverprofile
+*.test
+
+# Cache
+cmd/server/cache/
+cache/
+*.cache
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Build
+Makefile
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db

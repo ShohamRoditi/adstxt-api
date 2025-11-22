@@ -4,15 +4,15 @@ Production-ready RESTful API service for analyzing ads.txt files across domains.
 
 ## Features
 
-- ✅ Single domain analysis
-- ✅ Batch domain analysis (up to 50 domains)
-- ✅ Pluggable cache backends (Memory, Redis, File)
-- ✅ Custom rate limiting implementation (no external libraries)
-- ✅ Comprehensive error handling
-- ✅ Docker support with Docker Compose
-- ✅ CI/CD with GitHub Actions
-- ✅ Graceful shutdown
-- ✅ CORS support
+- Single domain analysis
+- Batch domain analysis (up to 50 domains)
+- Pluggable cache backends (Memory, Redis, File)
+- Custom rate limiting implementation (no external libraries)
+- Comprehensive error handling
+- Docker support with Docker Compose
+- CI/CD with GitHub Actions
+- Graceful shutdown
+- CORS support§
 
 ## Quick Start
 

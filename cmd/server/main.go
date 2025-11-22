@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,17 +16,32 @@ import (
 )
 
 func main() {
+	// Initialize structured logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	cfg := config.Load()
+
+	logger.Info("loading configuration",
+		slog.String("port", cfg.Port),
+		slog.String("cache_type", cfg.CacheType),
+		slog.Duration("cache_ttl", cfg.CacheTTL),
+		slog.Int("rate_limit", cfg.RateLimitPerSecond),
+	)
 
 	cacheStore, err := cache.NewCache(cfg.CacheType, cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize cache: %v", err)
+		logger.Error("failed to initialize cache", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 	defer cacheStore.Close()
 
 	rateLimiter := ratelimit.NewRateLimiter(cfg.RateLimitPerSecond)
+	defer rateLimiter.Stop()
 
-	handler := api.NewHandler(cacheStore, cfg)
+	handler := api.NewHandler(cacheStore, cfg, logger)
 	router := api.NewRouter(handler, rateLimiter)
 
 	server := &http.Server{
@@ -38,9 +53,10 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Server starting on port %s", cfg.Port)
+		logger.Info("server starting", slog.String("port", cfg.Port))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+			logger.Error("server failed", slog.String("error", err.Error()))
+			os.Exit(1)
 		}
 	}()
 
@@ -48,13 +64,14 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	logger.Info("shutting down server...")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		logger.Error("server forced to shutdown", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
-	log.Println("Server exited")
+	logger.Info("server exited successfully")
 }

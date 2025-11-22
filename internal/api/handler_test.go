@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -21,7 +23,8 @@ func TestHandler_Health(t *testing.T) {
 	cache := cache.NewMemoryCache(cfg.CacheTTL)
 	defer cache.Close()
 
-	handler := NewHandler(cache, cfg)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := NewHandler(cache, cfg, logger)
 
 	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
@@ -49,7 +52,8 @@ func TestHandler_AnalyzeSingle_MissingDomain(t *testing.T) {
 	cache := cache.NewMemoryCache(cfg.CacheTTL)
 	defer cache.Close()
 
-	handler := NewHandler(cache, cfg)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := NewHandler(cache, cfg, logger)
 
 	req := httptest.NewRequest("GET", "/api/analyze", nil)
 	w := httptest.NewRecorder()
@@ -70,7 +74,8 @@ func TestHandler_AnalyzeBatch_InvalidMethod(t *testing.T) {
 	cache := cache.NewMemoryCache(cfg.CacheTTL)
 	defer cache.Close()
 
-	handler := NewHandler(cache, cfg)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := NewHandler(cache, cfg, logger)
 
 	req := httptest.NewRequest("GET", "/api/batch-analysis", nil)
 	w := httptest.NewRecorder()
@@ -91,7 +96,8 @@ func TestHandler_AnalyzeBatch_EmptyDomains(t *testing.T) {
 	cache := cache.NewMemoryCache(cfg.CacheTTL)
 	defer cache.Close()
 
-	handler := NewHandler(cache, cfg)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := NewHandler(cache, cfg, logger)
 
 	body := BatchAnalysisRequest{Domains: []string{}}
 	jsonBody, _ := json.Marshal(body)
@@ -115,7 +121,8 @@ func TestHandler_AnalyzeBatch_TooManyDomains(t *testing.T) {
 	cache := cache.NewMemoryCache(cfg.CacheTTL)
 	defer cache.Close()
 
-	handler := NewHandler(cache, cfg)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	handler := NewHandler(cache, cfg, logger)
 
 	domains := make([]string, 51)
 	for i := range domains {

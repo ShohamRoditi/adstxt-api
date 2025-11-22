@@ -5,11 +5,15 @@ import (
 	"time"
 )
 
+// cacheEntry represents a single entry in the memory cache with its value and expiration time.
 type cacheEntry struct {
 	value      []byte
 	expiration time.Time
 }
 
+// MemoryCache is an in-memory cache implementation that stores data in a map with expiration times.
+// It automatically cleans up expired entries every 5 minutes via a background goroutine.
+// All methods are safe for concurrent use.
 type MemoryCache struct {
 	data       map[string]*cacheEntry
 	mu         sync.RWMutex
@@ -17,6 +21,8 @@ type MemoryCache struct {
 	cleanupT   *time.Ticker
 }
 
+// NewMemoryCache creates a new MemoryCache with the specified default TTL.
+// It starts a background goroutine that cleans up expired entries every 5 minutes.
 func NewMemoryCache(defaultTTL time.Duration) *MemoryCache {
 	mc := &MemoryCache{
 		data:       make(map[string]*cacheEntry),
@@ -28,6 +34,8 @@ func NewMemoryCache(defaultTTL time.Duration) *MemoryCache {
 	return mc
 }
 
+// Get retrieves a value from the cache by key.
+// Returns ErrCacheNotFound if the key doesn't exist or has expired.
 func (mc *MemoryCache) Get(key string) ([]byte, error) {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
@@ -40,6 +48,9 @@ func (mc *MemoryCache) Get(key string) ([]byte, error) {
 	return entry.value, nil
 }
 
+// Set stores a value in the cache with the specified TTL.
+// If ttl is 0, the default TTL is used. The entry will be automatically
+// removed after it expires during the next cleanup cycle.
 func (mc *MemoryCache) Set(key string, value []byte, ttl time.Duration) error {
 	if ttl == 0 {
 		ttl = mc.defaultTTL
@@ -56,6 +67,8 @@ func (mc *MemoryCache) Set(key string, value []byte, ttl time.Duration) error {
 	return nil
 }
 
+// Delete removes a key from the cache.
+// Returns nil even if the key doesn't exist.
 func (mc *MemoryCache) Delete(key string) error {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -64,11 +77,15 @@ func (mc *MemoryCache) Delete(key string) error {
 	return nil
 }
 
+// Close stops the background cleanup goroutine and releases resources.
+// Should be called when the cache is no longer needed to prevent goroutine leaks.
 func (mc *MemoryCache) Close() error {
 	mc.cleanupT.Stop()
 	return nil
 }
 
+// cleanup is a background goroutine that removes expired entries every 5 minutes.
+// It iterates through all entries and deletes those that have passed their expiration time.
 func (mc *MemoryCache) cleanup() {
 	for range mc.cleanupT.C {
 		mc.mu.Lock()

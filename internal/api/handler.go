@@ -1,19 +1,14 @@
-// =============================================================================
-// internal/adstxt/parser.go
-// =============================================================================
-
-// =============================================================================
-// internal/api/handler.go
-// =============================================================================
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
-	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,10 +17,14 @@ import (
 	"adstxt-api/internal/config"
 )
 
+const maxBodySize = 1 << 20 // 1MB
+
 type Handler struct {
 	cache   cache.Cache
 	fetcher *adstxt.Fetcher
 	cfg     *config.Config
+	logger  *slog.Logger
+	metrics *Metrics
 }
 
 type SingleAnalysisResponse struct {
@@ -50,38 +49,98 @@ type ErrorResponse struct {
 	Message string `json:"message,omitempty"`
 }
 
-func NewHandler(cache cache.Cache, cfg *config.Config) *Handler {
+type HealthResponse struct {
+	Status  string            `json:"status"`
+	Time    string            `json:"time"`
+	Version string            `json:"version,omitempty"`
+	Checks  map[string]string `json:"checks"`
+}
+
+type Metrics struct {
+	requestsTotal int64
+	cacheHits     int64
+	cacheMisses   int64
+	errorTotal    int64
+	mu            sync.RWMutex
+}
+
+func NewHandler(cache cache.Cache, cfg *config.Config, logger *slog.Logger) *Handler {
 	return &Handler{
 		cache:   cache,
 		fetcher: adstxt.NewFetcher(cfg.RequestTimeout),
 		cfg:     cfg,
+		logger:  logger,
+		metrics: &Metrics{},
 	}
 }
 
-func (h *Handler) AnalyzeSingle(w http.ResponseWriter, r *http.Request) {
-	domain := r.URL.Query().Get("domain")
+func validateDomain(domain string) error {
 	if domain == "" {
-		h.sendError(w, http.StatusBadRequest, "domain parameter is required")
+		return errors.New("domain cannot be empty")
+	}
+
+	// Check length
+	if len(domain) > 253 {
+		return errors.New("domain too long")
+	}
+
+	// Check for invalid characters
+	if strings.ContainsAny(domain, "/:@?#[]!$&'()*+,;= ") {
+		return errors.New("invalid domain format")
+	}
+
+	// Check basic format
+	if !strings.Contains(domain, ".") {
+		return errors.New("invalid domain format")
+	}
+
+	return nil
+}
+
+func (h *Handler) AnalyzeSingle(w http.ResponseWriter, r *http.Request) {
+	h.metrics.mu.Lock()
+	h.metrics.requestsTotal++
+	h.metrics.mu.Unlock()
+
+	domain := r.URL.Query().Get("domain")
+	if err := validateDomain(domain); err != nil {
+		h.logger.Warn("invalid domain", slog.String("domain", domain), slog.String("error", err.Error()))
+		h.sendError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	log.Printf("Cache Type: %s", os.Getenv("CACHE_TYPE"))
-
+	h.logger.Info("analyzing domain", slog.String("domain", domain))
 	result, err := h.analyzeDomain(domain)
 	if err != nil {
+		h.metrics.mu.Lock()
+		h.metrics.errorTotal++
+		h.metrics.mu.Unlock()
+		h.logger.Error("failed to analyze domain", slog.String("domain", domain), slog.String("error", err.Error()))
 		h.sendError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	h.logger.Info("domain analyzed successfully",
+		slog.String("domain", domain),
+		slog.Bool("cached", result.Cached),
+		slog.Int("advertisers", result.TotalAdvertisers))
 	h.sendJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) AnalyzeBatch(w http.ResponseWriter, r *http.Request) {
+	h.metrics.mu.Lock()
+	h.metrics.requestsTotal++
+	h.metrics.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
 	if r.Method != http.MethodPost {
 		h.sendError(w, http.StatusMethodNotAllowed, "only POST method is allowed")
 		return
 	}
-	log.Printf("Cache Type: %s", os.Getenv("CACHE_TYPE"))
+	// Limit body size
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 
 	var req BatchAnalysisRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -111,6 +170,15 @@ func (h *Handler) AnalyzeBatch(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func(d string) {
 			defer wg.Done()
+			// Check context cancellation
+			select {
+			case <-ctx.Done():
+				mu.Lock()
+				response.Errors[d] = "request timeout"
+				mu.Unlock()
+				return
+			default:
+			}
 
 			result, err := h.analyzeDomain(d)
 			mu.Lock()
@@ -130,24 +198,66 @@ func (h *Handler) AnalyzeBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
-	h.sendJSON(w, http.StatusOK, map[string]string{
-		"status": "healthy",
-		"time":   time.Now().Format(time.RFC3339),
+	checks := make(map[string]string)
+	overallStatus := "healthy"
+
+	// Check cache
+	testKey := "health:check"
+	if err := h.cache.Set(testKey, []byte("ok"), 10*time.Second); err != nil {
+		checks["cache"] = "unhealthy: " + err.Error()
+		overallStatus = "degraded"
+	} else {
+		checks["cache"] = "healthy"
+		h.cache.Delete(testKey)
+	}
+
+	response := HealthResponse{
+		Status:  overallStatus,
+		Time:    time.Now().Format(time.RFC3339),
+		Version: "1.0.0",
+		Checks:  checks,
+	}
+
+	statusCode := http.StatusOK
+	if overallStatus != "healthy" {
+		statusCode = http.StatusServiceUnavailable
+	}
+
+	h.sendJSON(w, statusCode, response)
+}
+
+func (h *Handler) Metrics(w http.ResponseWriter, r *http.Request) {
+	h.metrics.mu.RLock()
+	defer h.metrics.mu.RUnlock()
+
+	h.sendJSON(w, http.StatusOK, map[string]int64{
+		"requests_total": h.metrics.requestsTotal,
+		"cache_hits":     h.metrics.cacheHits,
+		"cache_misses":   h.metrics.cacheMisses,
+		"errors_total":   h.metrics.errorTotal,
 	})
 }
 
 func (h *Handler) analyzeDomain(domain string) (*SingleAnalysisResponse, error) {
 	cacheKey := fmt.Sprintf("adstxt:%s", domain)
-	cached := false
 
+	// Try to get from cache (works for all cache types: memory, file, redis)
 	cachedData, err := h.cache.Get(cacheKey)
 	if err == nil {
 		var result SingleAnalysisResponse
 		if json.Unmarshal(cachedData, &result) == nil {
 			result.Cached = true
+			h.metrics.mu.Lock()
+			h.metrics.cacheHits++
+			h.metrics.mu.Unlock()
 			return &result, nil
 		}
 	}
+
+	// Cache miss - fetch fresh data
+	h.metrics.mu.Lock()
+	h.metrics.cacheMisses++
+	h.metrics.mu.Unlock()
 
 	content, err := h.fetcher.FetchAdsTxt(domain)
 	if err != nil {
@@ -168,12 +278,13 @@ func (h *Handler) analyzeDomain(domain string) (*SingleAnalysisResponse, error) 
 		Domain:           domain,
 		TotalAdvertisers: len(advertisers),
 		Advertisers:      advertisers,
-		Cached:           cached,
+		Cached:           false, // Fresh data, not from cache
 		Timestamp:        time.Now().Format(time.RFC3339),
 	}
 
+	// Store in cache for future requests (works for all cache types)
 	if data, err := json.Marshal(result); err == nil {
-		h.cache.Set(cacheKey, data, 0)
+		h.cache.Set(cacheKey, data, h.cfg.CacheTTL)
 	}
 
 	return result, nil

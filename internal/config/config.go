@@ -1,3 +1,5 @@
+// Package config provides configuration management for the ads.txt API service.
+// Configuration is loaded from environment variables with sensible defaults.
 package config
 
 import (
@@ -6,18 +8,22 @@ import (
 	"time"
 )
 
+// Config holds all configuration values for the application.
+// All values are loaded from environment variables with fallback defaults.
 type Config struct {
-	Port               string
-	CacheType          string
-	CacheTTL           time.Duration
-	RateLimitPerSecond int
-	RedisAddr          string
-	RedisPassword      string
-	RedisDB            int
-	FileStoragePath    string
-	RequestTimeout     time.Duration
+	Port               string        // HTTP server port (default: 8080)
+	CacheType          string        // Cache backend: memory, redis, or file (default: memory)
+	CacheTTL           time.Duration // Cache entry time-to-live (default: 1h)
+	RateLimitPerSecond int           // Rate limit per client per second (default: 10)
+	RedisAddr          string        // Redis server address (default: localhost:6379)
+	RedisPassword      string        // Redis password (default: empty)
+	RedisDB            int           // Redis database number (default: 0)
+	FileStoragePath    string        // File cache storage path (default: ./cache)
+	RequestTimeout     time.Duration // HTTP request timeout (default: 10s)
 }
 
+// Load creates a new Config by reading environment variables.
+// If an environment variable is not set or invalid, the default value is used.
 func Load() *Config {
 	return &Config{
 		Port:               getEnv("PORT", "8080"),
