@@ -73,7 +73,7 @@ func TestMemoryCache_Delete(t *testing.T) {
 	key := "test-key"
 	value := []byte("test-value")
 
-	cache.Set(key, value, 0)
+	_ = cache.Set(key, value, 0)
 
 	err := cache.Delete(key)
 	if err != nil {
