@@ -27,7 +27,7 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:               getEnv("PORT", "8080"),
-		CacheType:          getEnv("CACHE_TYPE", "redis"),
+		CacheType:          getEnv("CACHE_TYPE", "memory"),
 		CacheTTL:           getDurationEnv("CACHE_TTL", 1*time.Hour),
 		RateLimitPerSecond: getIntEnv("RATE_LIMIT_PER_SECOND", 10),
 		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6379"),
