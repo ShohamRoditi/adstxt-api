@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"log"
 	"sync"
 	"time"
 )
@@ -87,14 +88,35 @@ func (mc *MemoryCache) Close() error {
 // cleanup is a background goroutine that removes expired entries every 5 minutes.
 // It iterates through all entries and deletes those that have passed their expiration time.
 func (mc *MemoryCache) cleanup() {
-	for range mc.cleanupT.C {
-		mc.mu.Lock()
-		now := time.Now()
-		for key, entry := range mc.data {
-			if now.After(entry.expiration) {
-				delete(mc.data, key)
-			}
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC in MemoryCache cleanup goroutine: %v", r)
 		}
-		mc.mu.Unlock()
+	}()
+
+	for range mc.cleanupT.C {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("PANIC during MemoryCache cleanup iteration: %v", r)
+				}
+			}()
+
+			mc.mu.Lock()
+			defer mc.mu.Unlock()
+
+			now := time.Now()
+			deleted := 0
+			for key, entry := range mc.data {
+				if now.After(entry.expiration) {
+					delete(mc.data, key)
+					deleted++
+				}
+			}
+
+			if deleted > 0 {
+				log.Printf("MemoryCache cleanup: removed %d expired entries", deleted)
+			}
+		}()
 	}
 }

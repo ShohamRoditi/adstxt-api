@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 )
+
+const maxResponseSize = 10 << 20 // 10MB max size for ads.txt files
 
 // Fetcher handles HTTP requests to retrieve ads.txt files from domains.
 // It tries multiple URL patterns (https, http, www prefix) to maximize success.
@@ -17,10 +20,23 @@ type Fetcher struct {
 
 // NewFetcher creates a new Fetcher with the specified timeout.
 // The Fetcher limits redirects to 10 to prevent infinite redirect loops.
+// It also sets granular timeouts for connection, TLS handshake, and response headers.
 func NewFetcher(timeout time.Duration) *Fetcher {
 	return &Fetcher{
 		client: &http.Client{
 			Timeout: timeout,
+			Transport: &http.Transport{
+				DialContext: (&net.Dialer{
+					Timeout:   5 * time.Second,  // Connection timeout
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				TLSHandshakeTimeout:   5 * time.Second, // TLS handshake timeout
+				ResponseHeaderTimeout: 5 * time.Second, // Response header timeout
+				ExpectContinueTimeout: 1 * time.Second,
+				MaxIdleConns:          100,
+				MaxIdleConnsPerHost:   10,
+				IdleConnTimeout:       90 * time.Second,
+			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= 10 {
 					return fmt.Errorf("too many redirects")
@@ -64,17 +80,18 @@ func (f *Fetcher) FetchAdsTxt(domain string) (string, error) {
 			lastErr = err
 			continue
 		}
+		defer resp.Body.Close()
 
 		if resp.StatusCode == http.StatusOK {
-			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
+			// Limit response size to prevent DoS attacks
+			limitedReader := io.LimitReader(resp.Body, maxResponseSize)
+			body, err := io.ReadAll(limitedReader)
 			if err != nil {
 				lastErr = err
 				continue
 			}
 			return string(body), nil
 		}
-		resp.Body.Close()
 		lastErr = fmt.Errorf("status code: %d", resp.StatusCode)
 	}
 

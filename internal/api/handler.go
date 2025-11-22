@@ -180,6 +180,14 @@ func (h *Handler) AnalyzeBatch(w http.ResponseWriter, r *http.Request) {
 			default:
 			}
 
+			// Validate domain to prevent SSRF attacks
+			if err := validateDomain(d); err != nil {
+				mu.Lock()
+				response.Errors[d] = "invalid domain: " + err.Error()
+				mu.Unlock()
+				return
+			}
+
 			result, err := h.analyzeDomain(d)
 			mu.Lock()
 			defer mu.Unlock()
@@ -247,12 +255,16 @@ func (h *Handler) analyzeDomain(domain string) (*SingleAnalysisResponse, error) 
 	cachedData, err := h.cache.Get(cacheKey)
 	if err == nil {
 		var result SingleAnalysisResponse
-		if json.Unmarshal(cachedData, &result) == nil {
+		if unmarshalErr := json.Unmarshal(cachedData, &result); unmarshalErr == nil {
 			result.Cached = true
 			h.metrics.mu.Lock()
 			h.metrics.cacheHits++
 			h.metrics.mu.Unlock()
 			return &result, nil
+		} else {
+			h.logger.Warn("failed to unmarshal cached data",
+				slog.String("domain", domain),
+				slog.String("error", unmarshalErr.Error()))
 		}
 	}
 
@@ -295,6 +307,12 @@ func (h *Handler) analyzeDomain(domain string) (*SingleAnalysisResponse, error) 
 }
 
 func (h *Handler) sendJSON(w http.ResponseWriter, status int, data interface{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			h.logger.Error("panic in JSON encoding", slog.Any("panic", r))
+		}
+	}()
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {

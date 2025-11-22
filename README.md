@@ -134,8 +134,6 @@ go test ./... -v
 # Run with race detector and coverage
 go test -race -coverprofile=coverage.out ./...
 
-# Generate coverage report
-go tool cover -html=coverage.out
 
 # Or use Makefile
 make test
