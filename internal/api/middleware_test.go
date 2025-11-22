@@ -518,8 +518,10 @@ func TestRateLimitMiddleware_HighLoad(t *testing.T) {
 	middleware := RateLimitMiddleware(limiter)(handler)
 
 	// Make 100 concurrent requests (should all succeed)
-	successCount := 0
-	done := make(chan bool, 100)
+	type result struct {
+		statusCode int
+	}
+	results := make(chan result, 100)
 
 	for i := 0; i < 100; i++ {
 		go func() {
@@ -529,16 +531,17 @@ func TestRateLimitMiddleware_HighLoad(t *testing.T) {
 
 			middleware.ServeHTTP(w, req)
 
-			if w.Code == http.StatusOK {
-				successCount++
-			}
-			done <- true
+			results <- result{statusCode: w.Code}
 		}()
 	}
 
-	// Wait for all requests
+	// Wait for all requests and count successes
+	successCount := 0
 	for i := 0; i < 100; i++ {
-		<-done
+		res := <-results
+		if res.statusCode == http.StatusOK {
+			successCount++
+		}
 	}
 
 	if successCount != 100 {
