@@ -62,7 +62,7 @@ func RateLimitMiddleware(limiter *ratelimit.RateLimiter) func(http.Handler) http
 			if !limiter.Allow(clientIP) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error":"Rate limit exceeded","message":"Too many requests. Please try again later."}`))
+				_, _ = w.Write([]byte(`{"error":"Rate limit exceeded","message":"Too many requests. Please try again later."}`))
 				return
 			}
 

@@ -58,7 +58,7 @@ func TestHandler_AnalyzeBatch_Timeout(t *testing.T) {
 	}
 
 	var response BatchAnalysisResponse
-	json.NewDecoder(w.Body).Decode(&response)
+	_ = json.NewDecoder(w.Body).Decode(&response)
 
 	// Some domains should timeout
 	if len(response.Errors) == 0 {

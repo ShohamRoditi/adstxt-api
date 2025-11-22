@@ -36,7 +36,7 @@ func TestHandler_Health(t *testing.T) {
 	}
 
 	var response map[string]string
-	json.NewDecoder(w.Body).Decode(&response)
+	_ = json.NewDecoder(w.Body).Decode(&response)
 
 	if response["status"] != "healthy" {
 		t.Errorf("Expected status 'healthy', got '%s'", response["status"])

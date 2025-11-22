@@ -25,7 +25,7 @@ func TestLoggingMiddleware(t *testing.T) {
 	// Create a test handler
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("test response"))
+		_, _ = w.Write([]byte("test response"))
 	})
 
 	// Wrap with logging middleware
@@ -132,7 +132,7 @@ func TestRateLimitMiddleware(t *testing.T) {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 	})
 
 	middleware := RateLimitMiddleware(limiter)(handler)
@@ -266,7 +266,7 @@ func TestRateLimitMiddleware_Reset(t *testing.T) {
 func TestCORSMiddleware(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("test"))
+		_, _ = w.Write([]byte("test"))
 	})
 
 	middleware := CORSMiddleware(handler)
@@ -349,7 +349,7 @@ func TestResponseWriter_DefaultStatusCode(t *testing.T) {
 	}
 
 	// Write response without explicitly setting status code
-	rw.Write([]byte("test"))
+	_, _ = rw.Write([]byte("test"))
 
 	if rw.statusCode != 200 {
 		t.Errorf("Expected default statusCode 200, got %d", rw.statusCode)
@@ -369,7 +369,7 @@ func TestMiddlewareChain(t *testing.T) {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 	})
 
 	// Chain middleware: CORS -> RateLimit -> Logging
@@ -413,7 +413,7 @@ func TestMiddlewareChain_RateLimited(t *testing.T) {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 	})
 
 	middleware := CORSMiddleware(

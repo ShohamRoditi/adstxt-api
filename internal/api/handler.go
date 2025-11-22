@@ -208,7 +208,9 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		overallStatus = "degraded"
 	} else {
 		checks["cache"] = "healthy"
-		h.cache.Delete(testKey)
+		if err := h.cache.Delete(testKey); err != nil {
+			h.logger.Warn("failed to delete health check key", slog.String("error", err.Error()))
+		}
 	}
 
 	response := HealthResponse{
@@ -293,7 +295,9 @@ func (h *Handler) analyzeDomain(domain string) (*SingleAnalysisResponse, error) 
 func (h *Handler) sendJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		h.logger.Error("failed to encode JSON response", slog.String("error", err.Error()))
+	}
 }
 
 func (h *Handler) sendError(w http.ResponseWriter, status int, message string) {

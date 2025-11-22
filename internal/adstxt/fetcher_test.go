@@ -121,7 +121,7 @@ func TestFetchAdsTxt_TooManyRedirects(t *testing.T) {
 func TestFetchAdsTxt_EmptyContent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(""))
+		_, _ = w.Write([]byte(""))
 	}))
 	defer server.Close()
 

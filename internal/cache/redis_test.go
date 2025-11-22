@@ -277,8 +277,8 @@ func TestRedisCache_ConcurrentAccess(t *testing.T) {
 		go func(n int) {
 			key := "concurrent-key"
 			value := []byte("value")
-			cache.Set(key, value, 1*time.Minute)
-			cache.Get(key)
+			_ = cache.Set(key, value, 1*time.Minute)
+			_, _ = cache.Get(key)
 			done <- true
 		}(i)
 	}
