@@ -43,11 +43,12 @@ func NewRateLimiter(limitPerSecond int) *RateLimiter {
 }
 
 // Allow checks if a request from the given client should be allowed based on the rate limit.
-// It returns true if the client has available tokens, false otherwise.
-// The method is thread-safe and uses a token bucket algorithm where tokens are refilled
-// every second based on the configured limit.
+// Returns true if the client has available tokens, false otherwise.
+// Uses token bucket algorithm - tokens refill every second up to the limit.
 func (rl *RateLimiter) Allow(clientID string) bool {
-	// Use write lock from the start to prevent race condition when creating new buckets
+	// Fixed race condition: was using RLock first, but multiple goroutines could create
+	// duplicate buckets. Now use write lock from start.
+	// TODO: Could optimize with sync.Map but current approach is simpler
 	rl.mu.Lock()
 	bucket, exists := rl.clients[clientID]
 	if !exists {

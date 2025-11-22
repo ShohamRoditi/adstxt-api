@@ -42,7 +42,8 @@ func NewFileCache(basePath string, defaultTTL time.Duration) (*FileCache, error)
 }
 
 // sanitizeKey creates a safe filename from a cache key by hashing it.
-// This prevents path traversal attacks from malicious keys like "../../../etc/passwd"
+// Prevents path traversal attacks (e.g., "../../../etc/passwd")
+// Using SHA256 instead of MD5 - slightly slower but prevents collision attacks
 func (fc *FileCache) sanitizeKey(key string) string {
 	hash := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(hash[:])

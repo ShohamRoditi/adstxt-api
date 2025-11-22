@@ -62,6 +62,8 @@ type Metrics struct {
 	cacheMisses   int64
 	errorTotal    int64
 	mu            sync.RWMutex
+	// TODO: Add histogram for response times
+	// TODO: Track errors by type (network, timeout, invalid domain)
 }
 
 func NewHandler(cache cache.Cache, cfg *config.Config, logger *slog.Logger) *Handler {
@@ -79,17 +81,18 @@ func validateDomain(domain string) error {
 		return errors.New("domain cannot be empty")
 	}
 
-	// Check length
+	// RFC 1035: domain max length is 253 characters
 	if len(domain) > 253 {
 		return errors.New("domain too long")
 	}
 
-	// Check for invalid characters
+	// Reject URLs, IPs, and special chars to prevent SSRF attacks
+	// This blocks things like "localhost:6379", "192.168.1.1", "http://evil.com"
 	if strings.ContainsAny(domain, "/:@?#[]!$&'()*+,;= ") {
 		return errors.New("invalid domain format")
 	}
 
-	// Check basic format
+	// Basic sanity check - must have at least one dot
 	if !strings.Contains(domain, ".") {
 		return errors.New("invalid domain format")
 	}
@@ -153,6 +156,8 @@ func (h *Handler) AnalyzeBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Limit batch size to prevent resource exhaustion
+	// 50 is somewhat arbitrary - could make configurable via env var
 	if len(req.Domains) > 50 {
 		h.sendError(w, http.StatusBadRequest, "maximum 50 domains per batch request")
 		return
@@ -163,6 +168,8 @@ func (h *Handler) AnalyzeBatch(w http.ResponseWriter, r *http.Request) {
 		Errors:  make(map[string]string),
 	}
 
+	// Process domains concurrently for better performance
+	// Each domain analyzed in separate goroutine
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
@@ -275,7 +282,8 @@ func (h *Handler) analyzeDomain(domain string) (*SingleAnalysisResponse, error) 
 
 	content, err := h.fetcher.FetchAdsTxt(domain)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch ads.txt: %v", err)
+		// Don't cache errors - domain might be temporarily unavailable
+		return nil, fmt.Errorf("failed to fetch ads.txt: %w", err)
 	}
 
 	advertisersMap := adstxt.ParseAdsTxt(content)

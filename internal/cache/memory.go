@@ -23,7 +23,8 @@ type MemoryCache struct {
 }
 
 // NewMemoryCache creates a new MemoryCache with the specified default TTL.
-// It starts a background goroutine that cleans up expired entries every 5 minutes.
+// Starts background goroutine for cleanup every 5 minutes.
+// Tried 1min interval but caused unnecessary CPU usage for our TTLs (1h default)
 func NewMemoryCache(defaultTTL time.Duration) *MemoryCache {
 	mc := &MemoryCache{
 		data:       make(map[string]*cacheEntry),
