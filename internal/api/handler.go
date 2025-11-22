@@ -286,7 +286,9 @@ func (h *Handler) analyzeDomain(domain string) (*SingleAnalysisResponse, error) 
 
 	// Store in cache for future requests (works for all cache types)
 	if data, err := json.Marshal(result); err == nil {
-		h.cache.Set(cacheKey, data, h.cfg.CacheTTL)
+		if err := h.cache.Set(cacheKey, data, h.cfg.CacheTTL); err != nil {
+			h.logger.Warn("failed to cache result", slog.String("domain", domain), slog.String("error", err.Error()))
+		}
 	}
 
 	return result, nil
