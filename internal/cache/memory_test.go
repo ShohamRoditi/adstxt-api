@@ -93,11 +93,11 @@ func TestMemoryCache_Cleanup(t *testing.T) {
 	// Add some entries with short TTL
 	for i := 0; i < 5; i++ {
 		key := string(rune('a' + i))
-		cache.Set(key, []byte("value"), 50*time.Millisecond)
+		_ = cache.Set(key, []byte("value"), 50*time.Millisecond)
 	}
 
 	// Add one entry with long TTL
-	cache.Set("long-lived", []byte("value"), 1*time.Hour)
+	_ = cache.Set("long-lived", []byte("value"), 1*time.Hour)
 
 	// Verify all entries exist
 	cache.mu.RLock()
@@ -152,21 +152,21 @@ func TestMemoryCache_ConcurrentAccess(t *testing.T) {
 
 	go func() {
 		for i := 0; i < 100; i++ {
-			cache.Set("key", []byte("value"), 1*time.Hour)
+			_ = cache.Set("key", []byte("value"), 1*time.Hour)
 		}
 		done <- true
 	}()
 
 	go func() {
 		for i := 0; i < 100; i++ {
-			cache.Get("key")
+			_, _ = cache.Get("key")
 		}
 		done <- true
 	}()
 
 	go func() {
 		for i := 0; i < 100; i++ {
-			cache.Delete("key")
+			_ = cache.Delete("key")
 		}
 		done <- true
 	}()
@@ -180,7 +180,7 @@ func TestMemoryCache_ConcurrentAccess(t *testing.T) {
 func TestMemoryCache_Close(t *testing.T) {
 	cache := NewMemoryCache(1 * time.Hour)
 
-	cache.Set("key", []byte("value"), 0)
+	_ = cache.Set("key", []byte("value"), 0)
 
 	// Close should not panic
 	err := cache.Close()

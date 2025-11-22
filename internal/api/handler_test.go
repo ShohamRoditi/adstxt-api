@@ -287,7 +287,7 @@ func TestHandler_AnalyzeDomain_CacheHit(t *testing.T) {
 
 	data, _ := json.Marshal(cachedResponse)
 	cacheKey := "adstxt:" + domain
-	cache.Set(cacheKey, data, cfg.CacheTTL)
+	_ = cache.Set(cacheKey, data, cfg.CacheTTL)
 
 	// Request should hit cache
 	req := httptest.NewRequest("GET", "/api/analyze?domain="+domain, nil)
@@ -327,7 +327,7 @@ func TestHandler_AnalyzeDomain_InvalidCachedData(t *testing.T) {
 	// Pre-populate cache with invalid JSON
 	domain := "bad-cache.com"
 	cacheKey := "adstxt:" + domain
-	cache.Set(cacheKey, []byte("invalid json data"), cfg.CacheTTL)
+	_ = cache.Set(cacheKey, []byte("invalid json data"), cfg.CacheTTL)
 
 	// Request should handle invalid cache data and try to fetch fresh
 	req := httptest.NewRequest("GET", "/api/analyze?domain="+domain, nil)
